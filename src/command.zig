@@ -98,6 +98,8 @@ pub fn CommandWithContext(comptime AppContext: type) type {
         diagnostic: ?*Diagnostic = null,
 
         fn setup(out: *CommandT, gpa: std.mem.Allocator, options: Options, parent: ?*CommandT) !void {
+            out.diagnostic = null;
+
             out.arena = std.heap.ArenaAllocator.init(gpa);
             errdefer out.arena.deinit();
 
