@@ -632,8 +632,9 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             gpa: std.mem.Allocator,
             args: []const []const u8,
             appContext: AppContext,
+            diag: ?*Diagnostic,
         ) !void {
-            try self.root().executeThis(gpa, args, appContext);
+            try self.root().executeThis(gpa, args, appContext, diag);
         }
 
         pub fn writeHelp(self: *const CommandT, gpa: std.mem.Allocator, printer: *term.Printer) !void {
