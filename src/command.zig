@@ -95,8 +95,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
         allowUnknownFlags: bool,
 
-        // diagnostics ref
-        diagnostic: ?*Diagnostic,
+        diagnostic: ?*Diagnostic = null,
 
         fn setup(out: *CommandT, gpa: std.mem.Allocator, options: Options, parent: ?*CommandT) !void {
             out.arena = std.heap.ArenaAllocator.init(gpa);
@@ -149,13 +148,11 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             out.parent = parent;
         }
 
-        pub fn init(gpa: std.mem.Allocator, options: Options, diag: ?*Diagnostic) !*CommandT {
+        pub fn init(gpa: std.mem.Allocator, options: Options) !*CommandT {
             const out = try gpa.create(CommandT);
             errdefer gpa.destroy(out);
 
             try setup(out, gpa, options, null);
-
-            out.diagnostic = diag;
 
             return out;
         }
@@ -598,7 +595,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             gpa: std.mem.Allocator,
             args: []const []const u8,
             userData: AppContext,
+            diag: ?*Diagnostic,
         ) !void {
+            std.debug.assert(self.diagnostic == null);
+
+            self.diagnostic = diag;
+            defer self.diagnostic = null;
+
             var ctx = try self.parseArgs(gpa, args[1..], userData);
 
             const CallbackFn = fn (self: *@This(), ctx: *const Context) anyerror!RunResult;

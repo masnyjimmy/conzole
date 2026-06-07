@@ -10,9 +10,8 @@ pub const types = struct {
 };
 
 pub const Command = command.Command;
-
 pub const CommandWithContext = command.CommandWithContext;
 
-pub const terminal = @import("terminal.zig");
+pub const RunResult = command.RunResult;
 
-pub const TerminalPrinter = terminal.TerminalPrinter;
+pub const terminal = @import("terminal.zig");
