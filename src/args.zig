@@ -142,7 +142,7 @@ pub const ListHandler = struct {
         }
     }
 
-    fn getArray(self: *ListHandler, comptime t: ArgType, id: []const u8) *std.ArrayList(ReturnType(t)) {
+    pub fn getArray(self: *ListHandler, comptime t: ArgType, id: []const u8) *std.ArrayList(ReturnType(t)) {
         const gop = try @as(HashArrayMap(t), self.storage[@intFromEnum(t)]).getOrPut(id);
 
         if (gop.found_existing == false) {
