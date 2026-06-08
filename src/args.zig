@@ -108,12 +108,13 @@ pub const ListHandler = struct {
         single: ArgType,
         list: ArgType,
     };
-
+    typeMap: std.StringArrayHashMapUnmanaged(ArgType),
     storage: Storage,
     parser: *Parser,
 
     pub fn init(parser: *Parser) ListHandler {
         const out: ListHandler = .{
+            .typeMap = .empty,
             .storage = undefined,
             .parser = parser,
         };
@@ -129,15 +130,16 @@ pub const ListHandler = struct {
         inline for (self.storage) |*el| {
             el.deinit(allocator);
         }
+
+        self.typeMap.deinit(allocator);
     }
 
-    fn typeOf(self: *ListHandler, id: []const u8) ?ArgType {
-        inline for (self.storage, 0..) |s, idx| {
-            if (s.contains(id))
-                return @enumFromInt(idx);
+    fn assertType(self: *ListHandler, allocator: std.mem.Allocator, id: []const u8, t: ArgType) !void {
+        if (self.typeMap.get(id)) |ot| {
+            std.debug.assert(ot == t);
+        } else {
+            try self.typeMap.putNoClobber(allocator, id, t);
         }
-
-        return null;
     }
 
     fn getArray(self: *ListHandler, comptime t: ArgType, id: []const u8) *std.ArrayList(ReturnType(t)) {
@@ -163,11 +165,7 @@ pub const ListHandler = struct {
                 return try self.parser.nextAs(t);
             },
             .list => |t| {
-                if (self.typeOf(id)) |to| {
-                    if (to != t)
-                        return error.TypeConflict;
-                }
-
+                try self.assertType(allocator, id, t);
                 try self.getArray(t, id).append(allocator, try self.parser.nextAs(t));
             },
         }
