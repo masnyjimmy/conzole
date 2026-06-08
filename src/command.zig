@@ -1,5 +1,5 @@
 const std = @import("std");
-const Args = @import("args.zig");
+const args_ = @import("args.zig");
 const term = @import("terminal.zig");
 
 pub fn CommandWithContext(comptime AppContext: type) type {
@@ -366,7 +366,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                 .currentCmd = self,
             };
 
-            var parser = Args.Parser.init(args);
+            var parser = args_.Parser.init(args);
             var posEnd = false;
 
             while (parser.next()) |tok| {
@@ -914,7 +914,7 @@ pub const Diagnostic = union(enum) {
     }
 };
 
-fn flagTypeToArg(comptime kind: FlagType) Args.Type {
+fn flagTypeToArg(comptime kind: FlagType) args_.ArgType {
     return switch (kind) {
         .int => .int,
         .number => .number,

@@ -49,10 +49,7 @@ pub const Parser = struct {
         return null;
     }
 
-    pub fn nextAs(self: *Parser, comptime as: ArgType) ?struct {
-        []const u8, // token text
-        ParseError!ReturnType(as), // value / error
-    } {
+    pub fn nextAs(self: *Parser, comptime as: ArgType) ?AsResult(as) {
         return if (self.read()) |curr|
             .{ curr, As(curr, as) }
         else
@@ -77,8 +74,15 @@ pub const Parser = struct {
     }
 };
 
+fn AsResult(comptime as: ArgType) type {
+    return struct {
+        []const u8,
+        ParseError!ReturnType(as),
+    };
+}
+
 fn enumSize(comptime T: type) usize {
-    const ti = @typeInfo(t);
+    const ti = @typeInfo(T);
 
     if (ti != .@"enum") @compileError("T must be enum");
 
@@ -95,13 +99,15 @@ pub const ListHandler = struct {
     }
 
     const Storage = blk: {
-        const types: [enumSize(ArgType)]type = undefined;
+        const size = enumSize(ArgType);
 
-        for (types, 0..) |*of, idx| {
-            of.* = ReturnType(@enumFromInt(idx));
+        var types: [size]type = undefined;
+
+        for (0..size) |idx| {
+            types[idx] = HashArrayMap(@enumFromInt(idx));
         }
 
-        break :blk @Tuple(types);
+        break :blk @Tuple(&types);
     };
 
     pub const TargetType = union(enum) {
@@ -113,22 +119,22 @@ pub const ListHandler = struct {
     parser: *Parser,
 
     pub fn init(parser: *Parser) ListHandler {
-        const out: ListHandler = .{
+        var out: ListHandler = .{
             .typeMap = .empty,
             .storage = undefined,
             .parser = parser,
         };
 
-        inline for (out.storage) |*el| {
-            el.* = .empty;
+        inline for (0..comptime enumSize(ArgType)) |idx| {
+            out.storage[idx] = .empty;
         }
 
         return out;
     }
 
     pub fn deinit(self: *ListHandler, allocator: std.mem.Allocator) void {
-        inline for (self.storage) |*el| {
-            el.deinit(allocator);
+        inline for (0..comptime enumSize(ArgType)) |idx| {
+            self.storage[idx].deinit(allocator);
         }
 
         self.typeMap.deinit(allocator);
@@ -142,14 +148,34 @@ pub const ListHandler = struct {
         }
     }
 
-    pub fn getArray(self: *ListHandler, comptime t: ArgType, id: []const u8) *std.ArrayList(ReturnType(t)) {
-        const gop = try @as(HashArrayMap(t), self.storage[@intFromEnum(t)]).getOrPut(id);
+    pub fn getArray(self: *ListHandler, allocator: std.mem.Allocator, comptime t: ArgType, id: []const u8) !*std.ArrayList(ReturnType(t)) {
+        const gop = try @as(*HashArrayMap(t), &self.storage[@intFromEnum(t)]).getOrPut(allocator, id);
 
         if (gop.found_existing == false) {
             gop.value_ptr.* = .empty;
         }
 
         return gop.value_ptr;
+    }
+    pub fn extractArray(self: *ListHandler, allocator: std.mem.Allocator, comptime t: ArgType, id: []const u8) !?[]const ReturnType(t) {
+        const storageIndex = @intFromEnum(t);
+
+        if (@as(*HashArrayMap(t), &self.storage[storageIndex]).fetchSwapRemove(id)) |kv| {
+            var list = kv.value;
+            return try list.toOwnedSlice(allocator);
+        }
+
+        return null;
+    }
+
+    fn TargetAsResult(comptime argType: TargetType) type {
+        switch (argType) {
+            .single => |t| return AsResult(t),
+            .list => return struct {
+                []const u8,
+                ParseError!void,
+            },
+        }
     }
 
     fn TargetReturnType(comptime argType: TargetType) type {
@@ -159,14 +185,26 @@ pub const ListHandler = struct {
         };
     }
 
-    pub fn nextAs(self: *ListHandler, allocator: std.mem.Allocator, id: []const u8, comptime argType: TargetType) !TargetReturnType(argType) {
+    pub fn nextAs(self: *ListHandler, allocator: std.mem.Allocator, id: []const u8, comptime argType: TargetType) !?TargetAsResult(argType) {
         switch (argType) {
             .single => |t| {
-                return try self.parser.nextAs(t);
+                return self.parser.nextAs(t);
             },
             .list => |t| {
                 try self.assertType(allocator, id, t);
-                try self.getArray(t, id).append(allocator, try self.parser.nextAs(t));
+
+                if (self.parser.nextAs(t)) |next| {
+                    if (next[1]) |val| {
+                        const array = try self.getArray(allocator, t, id);
+                        try array.append(
+                            allocator,
+                            val,
+                        );
+                        return .{ next[0], {} };
+                    } else |err| {
+                        return .{ next[0], err };
+                    }
+                } else return null;
             },
         }
     }
