@@ -49,7 +49,7 @@ pub const Parser = struct {
         return null;
     }
 
-    pub fn nextAs(self: *Parser, comptime as: Type) ?struct {
+    pub fn nextAs(self: *Parser, comptime as: ArgType) ?struct {
         []const u8, // token text
         ParseError!ReturnType(as), // value / error
     } {
@@ -59,7 +59,7 @@ pub const Parser = struct {
             null;
     }
 
-    pub fn As(in: []const u8, comptime as: Type) ParseError!ReturnType(as) {
+    pub fn As(in: []const u8, comptime as: ArgType) ParseError!ReturnType(as) {
         return switch (as) {
             .string => in,
             .int => std.fmt.parseInt(i64, in, 10) catch |err| mapError(err),
@@ -77,13 +77,110 @@ pub const Parser = struct {
     }
 };
 
-pub const Type = enum {
+fn enumSize(comptime T: type) usize {
+    const ti = @typeInfo(t);
+
+    if (ti != .@"enum") @compileError("T must be enum");
+
+    return ti.@"enum".fields.len;
+}
+
+pub const ListHandler = struct {
+    fn ArrayList(comptime t: ArgType) type {
+        return std.ArrayList(ReturnType(t));
+    }
+
+    fn HashArrayMap(comptime t: ArgType) type {
+        return std.StringArrayHashMapUnmanaged(ArrayList(t));
+    }
+
+    const Storage = blk: {
+        const types: [enumSize(ArgType)]type = undefined;
+
+        for (types, 0..) |*of, idx| {
+            of.* = ReturnType(@enumFromInt(idx));
+        }
+
+        break :blk @Tuple(types);
+    };
+
+    pub const TargetType = union(enum) {
+        single: ArgType,
+        list: ArgType,
+    };
+
+    storage: Storage,
+    parser: *Parser,
+
+    pub fn init(parser: *Parser) ListHandler {
+        const out: ListHandler = .{
+            .storage = undefined,
+            .parser = parser,
+        };
+
+        inline for (out.storage) |*el| {
+            el.* = .empty;
+        }
+
+        return out;
+    }
+
+    pub fn deinit(self: *ListHandler, allocator: std.mem.Allocator) void {
+        inline for (self.storage) |*el| {
+            el.deinit(allocator);
+        }
+    }
+
+    fn typeOf(self: *ListHandler, id: []const u8) ?ArgType {
+        inline for (self.storage, 0..) |s, idx| {
+            if (s.contains(id))
+                return @enumFromInt(idx);
+        }
+
+        return null;
+    }
+
+    fn getArray(self: *ListHandler, comptime t: ArgType, id: []const u8) *std.ArrayList(ReturnType(t)) {
+        const gop = try @as(HashArrayMap(t), self.storage[@intFromEnum(t)]).getOrPut(id);
+
+        if (gop.found_existing == false) {
+            gop.value_ptr.* = .empty;
+        }
+
+        return gop.value_ptr;
+    }
+
+    fn TargetReturnType(comptime argType: TargetType) type {
+        return switch (argType) {
+            .single => |t| ReturnType(t),
+            .list => void,
+        };
+    }
+
+    pub fn nextAs(self: *ListHandler, allocator: std.mem.Allocator, id: []const u8, comptime argType: TargetType) !TargetReturnType(argType) {
+        switch (argType) {
+            .single => |t| {
+                return try self.parser.nextAs(t);
+            },
+            .list => |t| {
+                if (self.typeOf(id)) |to| {
+                    if (to != t)
+                        return error.TypeConflict;
+                }
+
+                try self.getArray(t, id).append(allocator, try self.parser.nextAs(t));
+            },
+        }
+    }
+};
+
+pub const ArgType = enum {
     string,
     number,
     int,
 };
 
-fn ReturnType(comptime kind: Type) type {
+pub fn ReturnType(comptime kind: ArgType) type {
     return switch (kind) {
         .string => []const u8,
         .number => f64,
