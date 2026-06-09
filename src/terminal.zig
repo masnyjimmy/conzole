@@ -54,11 +54,16 @@ pub const Printer = struct {
 
     writer: *std.Io.Writer,
     indent_level: usize = 0,
-    comptime config: Config = .{},
 
     current_style: ?Style = null,
 
-    pub fn init(writer: *std.Io.Writer, comptime config: Config) !Printer {
+    config: Config,
+
+    pub fn init(writer: *std.Io.Writer) Self {
+        return .initConfig(writer, .{});
+    }
+
+    pub fn initConfig(writer: *std.Io.Writer, config: Config) Self {
         return .{
             .writer = writer,
             .config = config,
@@ -66,9 +71,9 @@ pub const Printer = struct {
     }
 
     pub fn deinit(self: *Printer) void {
-        comptime if (self.config.resetOnCleanup) {
+        if (self.config.resetOnCleanup) {
             self.resetStyle() catch {};
-        };
+        }
     }
 
     fn sgr(self: *Printer, code: u8) !void {
@@ -119,7 +124,7 @@ pub const Printer = struct {
     }
 
     pub fn print(self: *Self, allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
-        if (comptime self.config.processNewLine) {
+        if (self.config.processNewLine) {
             const res = try std.fmt.allocPrint(allocator, fmt, args);
             defer allocator.free(res);
 
@@ -140,7 +145,7 @@ pub const Printer = struct {
             try self.writer.print(fmt, args);
         }
 
-        if (comptime self.config.autoFlush) {
+        if (self.config.autoFlush) {
             try self.flush();
         }
     }
