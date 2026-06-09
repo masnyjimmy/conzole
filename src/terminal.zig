@@ -135,13 +135,15 @@ pub const Printer = struct {
                     _ = try self.writer.write(str);
                 }
 
-                const last = iter.peek() == null;
+                if (iter.peek()) |peek| {
+                    if (peek.len == 0)
+                        break;
 
-                if (last == false) {
                     try self.writer.writeByte('\n');
                 }
             }
         } else {
+            try self.writeIndent();
             try self.writer.print(fmt, args);
         }
 
