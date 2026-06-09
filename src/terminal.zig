@@ -121,7 +121,7 @@ pub const Printer = struct {
     pub fn print(self: *Self, allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
         if (comptime self.config.processNewLine) {
             const res = try std.fmt.allocPrint(allocator, fmt, args);
-            defer self.gpa.free(res);
+            defer allocator.free(res);
 
             var iter = std.mem.splitScalar(u8, res, '\n');
             while (iter.next()) |str| {

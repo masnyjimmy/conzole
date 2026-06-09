@@ -170,16 +170,29 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             return out;
         }
 
+        /// deinits itself and subcommands then destroy itself,
+        /// use on root command only!
+        pub fn destroy(self: *CommandT, allocator: std.mem.Allocator) void {
+            self.deinit();
+            allocator.destroy(self);
+        }
+
         pub fn deinit(self: *CommandT) void {
-            const alloc = self.arena.allocator();
-            self.flags.deinit(alloc);
-            self.nameIndex.deinit(alloc);
-            self.longAliases.deinit(alloc);
-            self.shortAliases.deinit(alloc);
-            var it = self.subcommands.valueIterator();
-            while (it.next()) |entry| entry.*.deinit();
-            self.subcommands.deinit(self.arena.allocator());
+            var iter = self.subcommands.valueIterator();
+
+            while (iter.next()) |entry| entry.*.deinit();
+
             self.arena.deinit();
+
+            // const alloc = self.arena.allocator();
+            // self.flags.deinit(alloc);
+            // self.nameIndex.deinit(alloc);
+            // self.longAliases.deinit(alloc);
+            // self.shortAliases.deinit(alloc);
+            // var it = self.subcommands.valueIterator();
+            // while (it.next()) |entry| entry.*.deinit();
+            // self.subcommands.deinit(self.arena.allocator());
+            // self.arena.deinit();
         }
 
         pub fn root(self: *CommandT) *CommandT {
@@ -641,7 +654,6 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
         pub fn writeHelp(self: *const CommandT, gpa: std.mem.Allocator, printer: *term.Printer) !void {
             var helpWriter = HelpWriter.init(gpa, printer, self);
-            defer helpWriter.deinit();
 
             try helpWriter.write();
         }
@@ -649,24 +661,20 @@ pub fn CommandWithContext(comptime AppContext: type) type {
         //================ Help writer ======================
 
         const HelpWriter = struct {
-            arena: std.heap.ArenaAllocator,
+            allocator: std.mem.Allocator,
             printer: *term.Printer,
             cmd: *const CommandT,
 
             pub fn init(
-                gpa: std.mem.Allocator,
+                allocator: std.mem.Allocator,
                 printer: *term.Printer,
                 cmd: *const CommandT,
             ) HelpWriter {
                 return .{
-                    .arena = std.heap.ArenaAllocator.init(gpa),
+                    .allocator = allocator,
                     .printer = printer,
                     .cmd = cmd,
                 };
-            }
-
-            pub fn deinit(self: *HelpWriter) void {
-                self.arena.deinit();
             }
 
             fn write(self: *HelpWriter) !void {
@@ -678,13 +686,14 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
                 try self.writeExamples();
 
-                try self.printer.print("\n", .{});
+                try self.printer.print(self.allocator, "\n", .{});
             }
 
             const offset = 10;
 
             fn writeBrief(self: *HelpWriter) !void {
                 try self.printer.printStyled(
+                    self.allocator,
                     .{
                         .fg = .white,
                     },
@@ -693,13 +702,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                         self.cmd.description orelse self.cmd.brief,
                     },
                 );
-                try self.printer.printStyled(.{ .fg = .yellow }, "\nUsage:\n", .{});
+                try self.printer.printStyled(self.allocator, .{ .fg = .yellow }, "\nUsage:\n", .{});
 
                 self.printer.indent();
                 defer self.printer.detend();
 
-                try self.printer.printStyled(.{ .fg = .green }, "{s}", .{self.cmd.name});
-                try self.printer.printStyled(.{ .fg = .cyan }, " [COMMAND] [OPTIONS]...\n", .{});
+                try self.printer.printStyled(self.allocator, .{ .fg = .green }, "{s}", .{self.cmd.name});
+                try self.printer.printStyled(self.allocator, .{ .fg = .cyan }, " [COMMAND] [OPTIONS]...\n", .{});
             }
 
             fn writeCommands(self: *HelpWriter) !void {
@@ -714,18 +723,18 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                     break :blk @max(10, max + offset);
                 };
 
-                try self.printer.printStyled(.{ .fg = .yellow }, "\nCommands:\n", .{});
+                try self.printer.printStyled(self.allocator, .{ .fg = .yellow }, "\nCommands:\n", .{});
                 var iter = self.cmd.subcommands.valueIterator();
 
                 self.printer.indent();
                 defer self.printer.detend();
 
                 while (iter.next()) |cmd| {
-                    try self.printer.printStyled(.{ .fg = .green }, "{[name]s: <[width]}", .{
+                    try self.printer.printStyled(self.allocator, .{ .fg = .green }, "{[name]s: <[width]}", .{
                         .name = cmd.*.name,
                         .width = width,
                     });
-                    try self.printer.printStyled(.{ .fg = .white }, " {[brief]s}\n", .{
+                    try self.printer.printStyled(self.allocator, .{ .fg = .white }, " {[brief]s}\n", .{
                         .brief = cmd.*.brief,
                     });
                 }
@@ -733,13 +742,12 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             fn writeFlags(self: *HelpWriter) !void {
                 // get local and global indices
-                const gpa = self.arena.allocator();
 
                 const localIndices, const globalIndices, const allIndices = blk: {
                     var localCount: usize = 0;
                     var globalCount: usize = 0;
 
-                    var list = try gpa.alloc(usize, self.cmd.flags.items.len);
+                    var list = try self.allocator.alloc(usize, self.cmd.flags.items.len);
 
                     for (self.cmd.flags.items, 0..) |flag, idx| {
                         if (flag.global) {
@@ -753,14 +761,14 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
                     break :blk .{ list[0..localCount], list[localCount..], list };
                 };
-                defer gpa.free(allIndices);
+                defer self.allocator.free(allIndices);
 
                 const indicesGroups = .{ localIndices, globalIndices };
 
                 inline for (indicesGroups, 0..) |indices, groupIdx| {
                     if (indices.len != 0) {
-                        var flagDefs = try std.ArrayList([]const u8).initCapacity(gpa, indices.len);
-                        defer flagDefs.deinit(gpa);
+                        var flagDefs = try std.ArrayList([]const u8).initCapacity(self.allocator, indices.len);
+                        defer flagDefs.deinit(self.allocator);
 
                         const width = blk: {
                             var max: usize = 0;
@@ -781,19 +789,19 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                             else => unreachable,
                         };
 
-                        try self.printer.printStyled(.{ .fg = .yellow }, "\n{s}:\n", .{header});
+                        try self.printer.printStyled(self.allocator, .{ .fg = .yellow }, "\n{s}:\n", .{header});
 
                         for (indices, flagDefs.items) |idx, def| {
                             const flag = &self.cmd.flags.items[idx];
 
                             self.printer.indent();
                             defer self.printer.detend();
-                            try self.printer.printStyled(.{ .fg = .green }, "{[def]s: <[width]}", .{
+                            try self.printer.printStyled(self.allocator, .{ .fg = .green }, "{[def]s: <[width]}", .{
                                 .def = def,
                                 .width = width,
                             });
 
-                            try self.printer.printStyled(.{ .fg = .white }, " {s}\n", .{flag.name}); // TODO: replace flag.name with flag.brief
+                            try self.printer.printStyled(self.allocator, .{ .fg = .white }, " {s}\n", .{flag.name}); // TODO: replace flag.name with flag.brief
                         }
                     }
                 }
@@ -801,36 +809,35 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             fn writeExamples(self: *HelpWriter) !void {
                 if (self.cmd.examples) |examples| {
-                    try self.printer.printStyled(.{ .fg = .yellow }, "\nExamples:\n", .{});
+                    try self.printer.printStyled(self.allocator, .{ .fg = .yellow }, "\nExamples:\n", .{});
 
                     for (examples) |example| {
                         self.printer.indent();
                         defer self.printer.detend();
 
-                        try self.printer.printStyled(.{ .fg = .white }, "{s}\n", .{example[0]});
+                        try self.printer.printStyled(self.allocator, .{ .fg = .white }, "{s}\n", .{example[0]});
                     }
                 }
             }
 
             fn flagDefinition(self: *HelpWriter, flag: *const Flag) ![]const u8 {
-                const alloc = self.arena.allocator();
-                var buf = try std.ArrayList(u8).initCapacity(alloc, flag.name.len);
+                var buf = try std.ArrayList(u8).initCapacity(self.allocator, flag.name.len);
 
                 if (flag.short) |short| {
-                    try buf.appendSlice(alloc, &.{ '-', short });
+                    try buf.appendSlice(self.allocator, &.{ '-', short });
                 }
 
                 if (flag.long) |long| {
                     if (buf.items.len != 0) {
-                        try buf.appendSlice(alloc, ", ");
+                        try buf.appendSlice(self.allocator, ", ");
                     }
 
-                    const tmp = try alloc.alloc(u8, 2 + long.len);
-                    defer alloc.free(tmp);
+                    const tmp = try self.allocator.alloc(u8, 2 + long.len);
+                    defer self.allocator.free(tmp);
 
                     const str = try std.fmt.bufPrint(tmp, "--{s}", .{long});
 
-                    try buf.appendSlice(alloc, str);
+                    try buf.appendSlice(self.allocator, str);
                 }
 
                 const pName = if (flag.paramName) |pName| pName else switch (flag.type) {
@@ -842,18 +849,18 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
                 if (pName) |name| {
                     if (buf.items.len != 0) {
-                        try buf.append(alloc, ' ');
+                        try buf.append(self.allocator, ' ');
                     }
 
-                    const tmp = try alloc.alloc(u8, 2 + name.len);
-                    defer alloc.free(tmp);
+                    const tmp = try self.allocator.alloc(u8, 2 + name.len);
+                    defer self.allocator.free(tmp);
 
                     const str = try std.fmt.bufPrint(tmp, "<{s}>", .{name});
 
-                    try buf.appendSlice(alloc, str);
+                    try buf.appendSlice(self.allocator, str);
                 }
 
-                return try buf.toOwnedSlice(alloc);
+                return try buf.toOwnedSlice(self.allocator);
             }
         };
     };
@@ -883,10 +890,18 @@ pub const Diagnostic = union(enum) {
     },
     UserError: ErrorInfo,
 
-    pub fn toMessage(self: *const Diagnostic, gpa: std.mem.Allocator) !struct {
+    const Status = struct {
         message: ?[]const u8,
         code: u8,
-    } {
+
+        pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
+            if (self.message) |m| {
+                allocator.free(m);
+            }
+        }
+    };
+
+    pub fn toStatus(self: *const Diagnostic, gpa: std.mem.Allocator) !Status {
         return switch (self.*) {
             .UnknownFlag => |f| .{
                 .message = try std.fmt.allocPrint(gpa, "unknown flag '{s}'", .{f.input}),
