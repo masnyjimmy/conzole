@@ -46,21 +46,28 @@ pub const Config = struct {
     indentString: []const u8 = "  ",
     processNewLine: bool = true,
     autoFlush: bool = true,
+    resetOnCleanup: bool = true,
 };
 
 pub const Printer = struct {
     const Self = @This();
 
-    gpa: std.mem.Allocator,
     writer: *std.Io.Writer,
     indent_level: usize = 0,
     comptime config: Config = .{},
 
-    pub fn init(gpa: std.mem.Allocator, writer: *std.Io.Writer, comptime config: Config) !Printer {
+    current_style: ?Style = null,
+
+    pub fn init(writer: *std.Io.Writer, comptime config: Config) !Printer {
         return .{
-            .gpa = gpa,
             .writer = writer,
             .config = config,
+        };
+    }
+
+    pub fn deinit(self: *Printer) void {
+        comptime if (self.config.resetOnCleanup) {
+            self.resetStyle() catch {};
         };
     }
 
@@ -70,10 +77,10 @@ pub const Printer = struct {
 
     pub fn resetStyle(self: *Self) !void {
         try self.sgr(0);
+        self.current_style = null;
     }
-    pub fn setStyle(self: *Self, style: Style) !void {
-        try self.resetStyle();
 
+    fn applyStyle(self: *Self, style: Style) !void {
         if (style.fg) |fg| try self.sgr(fg.fg());
         if (style.bg) |fg| try self.sgr(fg.bg());
 
@@ -83,6 +90,20 @@ pub const Printer = struct {
         if (style.underline) try self.sgr(4);
         if (style.blink) try self.sgr(5);
         if (style.strikethrough) try self.sgr(9);
+
+        self.current_style = style;
+    }
+
+    pub fn fetchSetStyle(self: *Self, style: Style) !?Style {
+        const out = self.current_style;
+
+        try self.applyStyle(style);
+
+        return out;
+    }
+
+    pub fn setStyle(self: *Self, style: Style) !void {
+        try self.applyStyle(style);
     }
 
     pub fn indent(self: *Self) void {
@@ -97,9 +118,9 @@ pub const Printer = struct {
         }
     }
 
-    pub fn print(self: *Self, comptime fmt: []const u8, args: anytype) !void {
+    pub fn print(self: *Self, allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
         if (comptime self.config.processNewLine) {
-            const res = try std.fmt.allocPrint(self.gpa, fmt, args);
+            const res = try std.fmt.allocPrint(allocator, fmt, args);
             defer self.gpa.free(res);
 
             var iter = std.mem.splitScalar(u8, res, '\n');
@@ -124,10 +145,12 @@ pub const Printer = struct {
         }
     }
 
-    pub fn printStyled(self: *Self, style: Style, comptime fmt: []const u8, args: anytype) !void {
-        try self.setStyle(style);
-        try self.print(fmt, args);
-        try self.resetStyle();
+    pub fn printStyled(self: *Self, allocator: std.mem.Allocator, style: Style, comptime fmt: []const u8, args: anytype) !void {
+        const prev_style = try self.fetchSetStyle(style);
+
+        try self.print(allocator, fmt, args);
+
+        if (prev_style) |s| try self.applyStyle(s) else try self.resetStyle();
     }
 
     pub fn flush(self: *Self) !void {
