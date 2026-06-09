@@ -136,10 +136,10 @@ pub const Printer = struct {
                 }
 
                 if (iter.peek()) |peek| {
+                    try self.writer.writeByte('\n');
+
                     if (peek.len == 0)
                         break;
-
-                    try self.writer.writeByte('\n');
                 }
             }
         } else {
