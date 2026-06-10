@@ -16,5 +16,4 @@ pub const RunResult = command.RunResult;
 
 pub const terminal = @import("terminal.zig");
 
-pub const TerminalPrinterWithConfig = terminal.PrinterWithConfig;
 pub const TerminalPrinter = terminal.Printer;

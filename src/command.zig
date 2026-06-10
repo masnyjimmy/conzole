@@ -768,7 +768,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                 inline for (indicesGroups, 0..) |indices, groupIdx| {
                     if (indices.len != 0) {
                         var flagDefs = try std.ArrayList([]const u8).initCapacity(self.allocator, indices.len);
-                        defer flagDefs.deinit(self.allocator);
+
+                        defer {
+                            for (flagDefs.items) |item| {
+                                self.allocator.free(item);
+                            }
+                            flagDefs.deinit(self.allocator);
+                        }
 
                         const width = blk: {
                             var max: usize = 0;
