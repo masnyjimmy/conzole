@@ -618,6 +618,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             defer self.diagnostic = null;
 
             var ctx = try self.parseArgs(gpa, args[1..], userData);
+            defer ctx.deinit(gpa);
 
             const CallbackFn = fn (self: *@This(), ctx: *const Context) anyerror!RunResult;
 
