@@ -168,7 +168,7 @@ pub const ListHandler = struct {
         return null;
     }
 
-    fn TargetAsResult(comptime argType: TargetType) type {
+    pub fn TargetAsResult(comptime argType: TargetType) type {
         switch (argType) {
             .single => |t| return AsResult(t),
             .list => return struct {
@@ -178,7 +178,7 @@ pub const ListHandler = struct {
         }
     }
 
-    fn TargetReturnType(comptime argType: TargetType) type {
+    pub fn TargetReturnType(comptime argType: TargetType) type {
         return switch (argType) {
             .single => |t| ReturnType(t),
             .list => void,
