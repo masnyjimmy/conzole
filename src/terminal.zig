@@ -117,6 +117,7 @@ pub const Printer = struct {
     pub fn detend(self: *Self) void {
         self.indent_level -|= 1;
     }
+
     fn writeIndent(self: *Self) !void {
         for (0..self.indent_level) |_| {
             try self.writer.writeAll(self.config.indentString);
@@ -124,6 +125,30 @@ pub const Printer = struct {
     }
 
     pub fn print(self: *Self, allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
+        try self.internalPrint(allocator, fmt, args);
+
+        if (self.config.autoFlush) {
+            try self.flush();
+        }
+    }
+
+    pub fn printStyled(self: *Self, allocator: std.mem.Allocator, style: Style, comptime fmt: []const u8, args: anytype) !void {
+        const prev_style = try self.fetchSetStyle(style);
+
+        try self.internalPrint(allocator, fmt, args);
+
+        if (prev_style) |s| try self.applyStyle(s) else try self.resetStyle();
+
+        if (self.config.autoFlush) {
+            try self.flush();
+        }
+    }
+
+    pub fn flush(self: *Self) !void {
+        try self.writer.flush();
+    }
+
+    fn internalPrint(self: *Self, allocator: std.mem.Allocator, comptime fmt: []const u8, args: anytype) !void {
         if (self.config.processNewLine) {
             const res = try std.fmt.allocPrint(allocator, fmt, args);
             defer allocator.free(res);
@@ -146,21 +171,5 @@ pub const Printer = struct {
             try self.writeIndent();
             try self.writer.print(fmt, args);
         }
-
-        if (self.config.autoFlush) {
-            try self.flush();
-        }
-    }
-
-    pub fn printStyled(self: *Self, allocator: std.mem.Allocator, style: Style, comptime fmt: []const u8, args: anytype) !void {
-        const prev_style = try self.fetchSetStyle(style);
-
-        try self.print(allocator, fmt, args);
-
-        if (prev_style) |s| try self.applyStyle(s) else try self.resetStyle();
-    }
-
-    pub fn flush(self: *Self) !void {
-        try self.writer.flush();
     }
 };
