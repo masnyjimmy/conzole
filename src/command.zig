@@ -7,14 +7,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
         const CommandT = @This();
 
         pub const Context = struct {
-            gpa: std.mem.Allocator,
-
             values: std.StringHashMapUnmanaged(FlagPayload),
             app: AppContext,
             args: []const []const u8,
             positional: usize,
             rootCmd: *CommandT,
             currentCmd: *CommandT,
+            done: *bool,
 
             pub fn deinit(self: *Context, gpa: std.mem.Allocator) void {
                 self.values.deinit(gpa);
@@ -369,14 +368,17 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                 }
             }
 
+            const done_ptr = try gpa.create(bool);
+            errdefer gpa.destroy(done_ptr);
+
             var ctx: Context = .{
-                .gpa = gpa,
                 .values = .empty,
                 .app = userData,
                 .args = args,
                 .positional = 0,
                 .rootCmd = self.root(),
                 .currentCmd = self,
+                .done = done_ptr,
             };
 
             var parser = args_.Parser.init(args);
