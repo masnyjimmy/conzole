@@ -1,5 +1,5 @@
 const std = @import("std");
-const args_ = @import("args.zig");
+const Parser = @import("parser.zig");
 const term = @import("terminal.zig");
 
 pub fn CommandWithContext(comptime AppContext: type) type {
@@ -54,7 +54,6 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             brief: []const u8,
             description: ?[]const u8 = null,
             customUsage: ?[]const u8 = null,
-            examples: ?[]const ExampleDesc = null,
 
             // callbacks
             onPersistentPreRun: ?RunFnOption = .inherit,
@@ -381,7 +380,8 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                 .done = done_ptr,
             };
 
-            var parser = args_.Parser.init(args);
+            var parser: Parser = .init(args);
+
             var posEnd = false;
 
             while (parser.next()) |tok| {
@@ -967,11 +967,6 @@ const ErrorInfo = struct {
     code: u8,
 };
 
-pub const ExampleDesc = struct {
-    []const u8,
-    []const u8,
-};
-
 pub const FlagOptions = struct {
     name: []const u8,
     brief: []const u8,
@@ -980,15 +975,17 @@ pub const FlagOptions = struct {
         auto,
         custom: []const u8,
     } = .auto,
+
     short: ?union(enum) {
         auto,
         custom: u8,
     } = .auto,
+
     paramName: ?[]const u8 = null,
     global: bool = false,
 };
 
-const Flag = struct {
+const FlagData = struct {
     name: []const u8,
     global: bool,
     long: ?[]const u8,
@@ -1016,21 +1013,27 @@ fn flagTypeFromBind(ptr: anytype) FlagType {
     return ft;
 }
 
-pub const Bool = bool;
+pub const Flag = bool;
 pub const Int = i64;
 pub const Number = f64;
 pub const String = []const u8;
 
 pub const FlagType = enum {
-    bool,
+    flag,
     int,
+    list_int,
     number,
+    list_number,
     string,
+    list_string,
 };
 
 const FlagPayload = union(FlagType) {
-    bool: Bool,
+    flag: Flag,
     int: Int,
+    list_int: []const Int,
     number: Number,
+    list_number: []const Number,
     string: String,
+    list_string: []const String,
 };
