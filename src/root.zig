@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const args = @import("argument.zig");
+pub const args = @import("argument.zig");
 pub const types = args.types;
 
 pub const Reader = @import("reader.zig");
