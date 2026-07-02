@@ -151,7 +151,7 @@ pub fn GitCommand(allocator: std.mem.Allocator) !*Command {
 
 fn DefaultGlobalHandler(ctx: *const Command.Context) !void {
     if (ctx.getValue("help")) |_| {
-        try ctx.currentCmd.writeHelp(ctx.app.printer);
+        try ctx.current.writeHelp(ctx.app.printer);
         ctx.stop();
         return;
     }

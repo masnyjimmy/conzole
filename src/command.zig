@@ -36,8 +36,8 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             app: AppContext,
 
-            rootCmd: *CommandT,
-            currentCmd: *CommandT,
+            root: *CommandT,
+            current: *CommandT,
             done: *bool,
 
             pub fn deinit(self: *Context, gpa: std.mem.Allocator) void {
@@ -118,32 +118,15 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             };
 
             // crazy shit that resolves option callback to callback
-            inline for (
-                .{
-                    &out.persistent_pre_run,
-                    &out.pre_run,
-                    &out.run,
-                    &out.persistent_post_run,
-                    &out.post_run,
-                },
-                .{
-                    options.persistent_pre_run,
-                    options.pre_run,
-                    options.run,
-                    options.persistent_post_run,
-                    options.post_run,
-                },
-                .{
-                    if (parent) |p| p.persistent_pre_run else null,
-                    if (parent) |p| p.pre_run else null,
-                    if (parent) |p| p.run else null,
-                    if (parent) |p| p.persistent_post_run else null,
-                    if (parent) |p| p.post_run else null,
-                },
-            ) |outCb, inCb, parCb| {
-                outCb.* = if (inCb) |o| switch (o) {
+
+            const fields: []const []const u8 = &.{ "persistent_pre_run", "pre_run", "run", "persistent_post_run", "post_run" };
+
+            inline for (fields) |field| {
+                const in: ?Options.RunFnOption = @field(options, field);
+
+                @field(out, field) = if (in) |i| switch (i) {
                     .custom => |v| v,
-                    .inherit => if (parCb) |cb| cb else null,
+                    .inherit => if (parent) |p| @field(p.*, field) else null,
                 } else null;
             }
         }
@@ -463,8 +446,8 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             const ctx: Context = .{
                 .app = app,
-                .rootCmd = self.root(),
-                .currentCmd = self,
+                .root = self.root(),
+                .current = self,
                 .done = &done,
                 .args = args,
                 .values = values,
@@ -690,8 +673,6 @@ test "test git command" {
 
     var aw = std.Io.Writer.Allocating.init(std.testing.allocator);
     defer {
-        const slice = aw.written();
-        std.debug.print("hey: {s}", .{slice});
         aw.deinit();
     }
 
