@@ -280,7 +280,6 @@ test "help no crash" {
     var aw = std.Io.Writer.Discarding.init(&.{});
     const w = &aw.writer;
 
-    const w = &aw.writer;
     var printer = Printer.initConfig(w, .{ .colored = false });
 
     var help_writer = HelpWriter.init(std.testing.allocator, &printer, &cmd.desc);
