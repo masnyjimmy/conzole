@@ -1,6 +1,9 @@
 const std = @import("std");
 const Reader = @import("reader.zig");
+
 const term = @import("terminal.zig");
+const Printer = term.Printer;
+
 const argument = @import("argument.zig");
 
 pub const CommandDesc = struct {
@@ -9,10 +12,6 @@ pub const CommandDesc = struct {
 
     name: []const u8,
     brief: []const u8,
-    description: ?[]const u8,
-
-    custom_usage: ?[]const u8,
-    allow_unknown_flags: bool,
 
     flags: std.ArrayList(FlagDesc),
     name_map: std.array_hash_map.String(usize),
@@ -82,28 +81,24 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             name: []const u8,
             brief: []const u8,
-            description: ?[]const u8 = null,
-            customUsage: ?[]const u8 = null,
 
             // callbacks
-            onPersistentPreRun: ?RunFnOption = .inherit,
-            onPreRun: ?RunFnOption = null,
-            onRun: ?RunFnOption = null,
-            onPersistentPostRun: ?RunFnOption = .inherit,
-            onPostRun: ?RunFnOption = null,
-
-            allowUnknownFlags: bool = false,
+            persistent_pre_run: ?RunFnOption = .inherit,
+            pre_run: ?RunFnOption = null,
+            run: ?RunFnOption = null,
+            persistent_post_run: ?RunFnOption = .inherit,
+            post_run: ?RunFnOption = null,
         };
 
         arena: std.heap.ArenaAllocator,
 
         desc: CommandDesc,
         /// callbacks
-        preRun: ?RunFn,
-        persistentPreRun: ?RunFn,
+        pre_run: ?RunFn,
+        persistent_pre_run: ?RunFn,
         run: ?RunFn,
-        postRun: ?RunFn,
-        persistentPostRun: ?RunFn,
+        post_run: ?RunFn,
+        persistent_post_run: ?RunFn,
 
         fn setup(out: *CommandT, gpa: std.mem.Allocator, options: Options, parent: ?*CommandT) !void {
             out.arena = std.heap.ArenaAllocator.init(gpa);
@@ -115,10 +110,6 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
                 .name = options.name,
                 .brief = options.brief,
-                .description = options.description,
-
-                .custom_usage = options.customUsage,
-                .allow_unknown_flags = options.allowUnknownFlags,
 
                 .flags = .empty,
                 .name_map = .empty,
@@ -129,25 +120,25 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             // crazy shit that resolves option callback to callback
             inline for (
                 .{
-                    &out.persistentPreRun,
-                    &out.preRun,
+                    &out.persistent_pre_run,
+                    &out.pre_run,
                     &out.run,
-                    &out.persistentPostRun,
-                    &out.postRun,
+                    &out.persistent_post_run,
+                    &out.post_run,
                 },
                 .{
-                    options.onPersistentPreRun,
-                    options.onPreRun,
-                    options.onRun,
-                    options.onPersistentPostRun,
-                    options.onPostRun,
+                    options.persistent_pre_run,
+                    options.pre_run,
+                    options.run,
+                    options.persistent_post_run,
+                    options.post_run,
                 },
                 .{
-                    if (parent) |p| p.persistentPreRun else null,
-                    if (parent) |p| p.preRun else null,
+                    if (parent) |p| p.persistent_pre_run else null,
+                    if (parent) |p| p.pre_run else null,
                     if (parent) |p| p.run else null,
-                    if (parent) |p| p.persistentPostRun else null,
-                    if (parent) |p| p.postRun else null,
+                    if (parent) |p| p.persistent_post_run else null,
+                    if (parent) |p| p.post_run else null,
                 },
             ) |outCb, inCb, parCb| {
                 outCb.* = if (inCb) |o| switch (o) {
@@ -210,13 +201,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
         }
 
         fn executePreRun(self: *const CommandT, ctx: *const Context) anyerror!void {
-            if (self.preRun) |cb| {
+            if (self.pre_run) |cb| {
                 try cb(ctx);
             }
         }
 
         fn executePersistentPreRun(self: *const CommandT, ctx: *const Context) anyerror!void {
-            if (self.persistentPreRun) |cb| {
+            if (self.persistent_pre_run) |cb| {
                 try cb(ctx);
 
                 if (ctx.done.*)
@@ -235,13 +226,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
         }
 
         fn executePostRun(self: *const CommandT, ctx: *const Context) anyerror!void {
-            if (self.postRun) |cb| {
+            if (self.post_run) |cb| {
                 try cb(ctx);
             }
         }
 
         fn executePersistentPostRun(self: *const CommandT, ctx: *const Context) anyerror!void {
-            if (self.persistentPostRun) |cb| {
+            if (self.persistent_post_run) |cb| {
                 try cb(ctx);
                 if (ctx.done.*)
                     return;
@@ -355,14 +346,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
         ) !ParseResult {
             var collector: argument.Collector = .empty;
             errdefer collector.deinit(allocator);
-            
+
             var positionals: usize = 0;
             var positionals_end: bool = false;
 
             var reader: Reader = .init(args);
 
             while (reader.read()) |tok| {
-                std.debug.print("payload: {s}\n", .{tok.payload});
                 switch (tok.type) {
                     .value => {
                         if (positionals_end) {
@@ -502,6 +492,14 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             try cmd.target.call(pr.positional, pr.values, app);
         }
+
+        pub fn writeHelp(self: *CommandT, printer: *term.Printer) !void {
+            const help = @import("help.zig");
+
+            const desc = &self.desc;
+            var hw = help.HelpWriter.init(self.arena.allocator(), printer, desc);
+            try hw.write();
+        }
     };
 }
 
@@ -569,7 +567,7 @@ pub const FlagOptions = struct {
     global: bool = false,
 };
 
-const FlagDesc = struct {
+pub const FlagDesc = struct {
     name: []const u8,
     brief: []const u8,
     global: bool,
@@ -638,7 +636,7 @@ fn createTestCommand() !*TestCommand {
     var subCmd = try rootCmd.createSub(.{
         .name = "cmd",
         .brief = "sub test command",
-        .onRun = .{ .custom = &Fns.Cmd },
+        .run = .{ .custom = &Fns.Cmd },
     });
 
     try subCmd.addFlag(.{
@@ -690,16 +688,64 @@ test "test git command" {
         },
     };
 
+    var aw = std.Io.Writer.Allocating.init(std.testing.allocator);
+    defer {
+        const slice = aw.written();
+        std.debug.print("hey: {s}", .{slice});
+        aw.deinit();
+    }
+
+    const w = &aw.writer;
+    var printer = term.Printer.initConfig(w, .{ .colored = false });
+
     for (arguments) |arg|
         cmd.execute(
             std.testing.allocator,
             arg,
             &diag,
-            {},
+            .{ .printer = &printer },
         ) catch |err| return switch (err) {
             error.InvalidArguments => {
                 std.debug.print("error: {f}\n", .{diag});
             },
             else => err,
         };
+}
+
+test "test help flag" {
+    const test_data = @import("test_data.zig");
+
+    const args: []const []const []const u8 = &.{
+        &.{"--help"},
+        &.{ "remote", "--help" },
+        &.{ "add", "-h" },
+    };
+    const cmd = try test_data.GitCommand(std.testing.allocator);
+    defer cmd.destroy();
+
+    var diag: Diagnostic = undefined;
+
+    var aw = std.Io.Writer.Discarding.init(&.{});
+    const w = &aw.writer;
+
+    var printer = Printer.initConfig(w, .{ .colored = false });
+
+    for (args) |arg|
+        cmd.execute(
+            std.testing.allocator,
+            arg,
+            &diag,
+            .{ .printer = &printer },
+        ) catch |err| return switch (err) {
+            error.InvalidArguments => {
+                std.debug.print("error: {f}\n", .{diag});
+            },
+            else => err,
+        };
+
+    try w.flush();
+}
+
+test {
+    std.testing.refAllDecls(@import("help.zig"));
 }
