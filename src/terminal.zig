@@ -47,6 +47,7 @@ pub const Config = struct {
     processNewLine: bool = true,
     autoFlush: bool = true,
     resetOnCleanup: bool = true,
+    colored: bool = true,
 };
 
 pub const Printer = struct {
@@ -77,6 +78,9 @@ pub const Printer = struct {
     }
 
     fn sgr(self: *Printer, code: u8) !void {
+        if (self.config.colored == false)
+            return;
+
         try self.writer.print("\x1b[{d}m", .{code});
     }
 
