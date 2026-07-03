@@ -6,12 +6,19 @@ const Printer = term.Printer;
 
 const argument = @import("argument.zig");
 
+const UnknownFlagBehaviour = enum {
+    @"error",
+    as_positional,
+};
+
 pub const CommandDesc = struct {
     parent: ?*CommandDesc,
     subcommands: std.StringHashMapUnmanaged(*CommandDesc),
 
     name: []const u8,
     brief: []const u8,
+
+    unknown_flag_behaviour: UnknownFlagBehaviour,
 
     flags: std.ArrayList(FlagDesc),
     name_map: std.array_hash_map.String(usize),
@@ -82,6 +89,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             name: []const u8,
             brief: []const u8,
 
+            unknown_flag_behaviour: UnknownFlagBehaviour = .@"error",
             // callbacks
             persistent_pre_run: ?RunFnOption = .inherit,
             pre_run: ?RunFnOption = null,
@@ -110,6 +118,8 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
                 .name = options.name,
                 .brief = options.brief,
+
+                .unknown_flag_behaviour = options.unknown_flag_behaviour,
 
                 .flags = .empty,
                 .name_map = .empty,
@@ -335,7 +345,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             var reader: Reader = .init(args);
 
-            while (reader.read()) |tok| {
+            inner: while (reader.read()) |tok| {
                 switch (tok.type) {
                     .value => {
                         if (positionals_end) {
@@ -350,9 +360,13 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                         positionals += 1;
                     },
                     .long => {
-                        positionals_end = true;
-
                         const flag = self.getFlag(.{ .long = tok.payload }, false) orelse {
+                            switch (self.desc.unknown_flag_behaviour) {
+                                .@"error" => {},
+                                .as_positional => {
+                                    positionals += 1;
+                                },
+                            }
                             diagnostic.* = .{
                                 .unknown_flag = .{
                                     .arg = tok.lexeme,
@@ -360,10 +374,24 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                             };
                             return CommandError.InvalidArguments;
                         };
+                        positionals_end = true;
 
                         try collector.interceptNext(allocator, &reader, flag.name, flag.type);
                     },
                     .short => {
+
+                        // check if each known
+                        switch (self.desc.unknown_flag_behaviour) {
+                            .as_positional => {
+                                for (tok.payload) |s| {
+                                    const known = self.desc.short_map.contains(s);
+                                    if (known == false) {
+                                        positionals += 1;
+                                        continue :inner;
+                                    }
+                                }
+                            },
+                        }
                         positionals_end = true;
 
                         const last = tok.payload[tok.payload.len - 1];
