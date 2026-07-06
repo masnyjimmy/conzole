@@ -6,6 +6,9 @@ pub const Collector = struct {
         flag_type: Type,
         array: std.ArrayList(Payload),
     };
+
+    pub const Error = Reader.Error || std.mem.Allocator.Error;
+
     values: std.array_hash_map.String(Payload),
     lists: std.array_hash_map.String(List),
 
@@ -20,7 +23,7 @@ pub const Collector = struct {
         reader: *Reader,
         name: []const u8,
         flag_type: Type,
-    ) !void {
+    ) Error!void {
         switch (flag_type) {
             .flag => {
                 if (self.values.contains(name)) {
@@ -54,7 +57,7 @@ pub const Collector = struct {
         }
     }
 
-    pub fn collect(self: *Collector, allocator: std.mem.Allocator) !std.array_hash_map.String(Payload) {
+    pub fn collect(self: *Collector, allocator: std.mem.Allocator) Error!std.array_hash_map.String(Payload) {
         defer {
             var it = self.lists.iterator();
             while (it.next()) |kv| {
