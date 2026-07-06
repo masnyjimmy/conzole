@@ -391,6 +391,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                                     }
                                 }
                             },
+                            else => {},
                         }
                         positionals_end = true;
 
