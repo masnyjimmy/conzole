@@ -39,7 +39,15 @@ pub const Collector = struct {
 
                 const value = try reader.readAs(tag.ReadType());
 
-                try self.values.putNoClobber(allocator, name, @unionInit(Payload, @tagName(tag), value.payload));
+                try self.values.putNoClobber(
+                    allocator,
+                    name,
+                    @unionInit(
+                        Payload,
+                        @tagName(tag),
+                        value.payload,
+                    ),
+                );
             },
             inline .list_int, .list_number, .list_string => |tag| {
                 const value = try reader.readAs(tag.ReadType());
@@ -57,7 +65,7 @@ pub const Collector = struct {
         }
     }
 
-    pub fn collect(self: *Collector, allocator: std.mem.Allocator) Error!std.array_hash_map.String(Payload) {
+    pub fn collect(self: *Collector, allocator: std.mem.Allocator) !std.array_hash_map.String(Payload) {
         defer {
             var it = self.lists.iterator();
             while (it.next()) |kv| {
@@ -82,7 +90,15 @@ pub const Collector = struct {
                         out.appendAssumeCapacity(@field(v, @tagName(tag.elementType())));
                     }
 
-                    try self.values.put(allocator, kv.key_ptr.*, @unionInit(Payload, @tagName(tag), out.toOwnedSliceAssert()));
+                    try self.values.put(
+                        allocator,
+                        kv.key_ptr.*,
+                        @unionInit(
+                            Payload,
+                            @tagName(tag),
+                            out.toOwnedSliceAssert(),
+                        ),
+                    );
                 },
                 else => unreachable,
             }
