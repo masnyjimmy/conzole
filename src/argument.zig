@@ -60,7 +60,7 @@ pub const Collector = struct {
             while (it.next()) |kv| {
                 kv.value_ptr.array.deinit(allocator);
             }
-            self.lists.deinit(allocator);
+            self.lists.clearAndFree(allocator);
         }
         errdefer {
             self.values.deinit(allocator);
