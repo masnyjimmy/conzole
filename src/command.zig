@@ -362,10 +362,11 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                     .long => {
                         const flag = self.getFlag(.{ .long = tok.payload }, false) orelse {
                             switch (self.desc.unknown_flag_behaviour) {
-                                .@"error" => {},
                                 .as_positional => {
                                     positionals += 1;
+                                    continue :inner;
                                 },
+                                else => {},
                             }
                             diagnostic.* = .{
                                 .unknown_flag = .{
