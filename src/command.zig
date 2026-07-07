@@ -46,6 +46,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             root: *CommandT,
             current: *CommandT,
             done: *bool,
+            diagnostic: *Diagnostic,
 
             pub fn deinit(self: *Context, gpa: std.mem.Allocator) void {
                 self.values.deinit(gpa);
@@ -61,6 +62,16 @@ pub fn CommandWithContext(comptime AppContext: type) type {
 
             pub fn stop(self: *const Context) void {
                 self.done.* = true;
+            }
+
+            pub fn fail(self: *const Context, comptime fmt: []const u8, args: anytype) !void {
+                const message = try std.fmt.allocPrint(self.root.arena.allocator(), fmt, args);
+                self.diagnostic.* = .{
+                    .custom = .{
+                        .message = message,
+                    },
+                };
+                return CommandError.CommandFailed;
             }
 
             pub fn getValueT(
@@ -461,6 +472,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             args: []const []const u8,
             values: std.array_hash_map.String(argument.Payload),
             app: AppContext,
+            diagnostic: *Diagnostic,
         ) !void {
             const CallSig = *const fn (*CommandT, *const Context) anyerror!void;
 
@@ -481,6 +493,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
                 .done = &done,
                 .args = args,
                 .values = values,
+                .diagnostic = diagnostic,
             };
 
             for (callfns) |@"fn"| {
@@ -503,7 +516,7 @@ pub fn CommandWithContext(comptime AppContext: type) type {
             var pr = try cmd.target.parseArgs(allocator, cmd.args, diagnostics);
             defer pr.values.deinit(allocator);
 
-            try cmd.target.call(pr.positional, pr.values, app);
+            try cmd.target.call(pr.positional, pr.values, app, diagnostics);
         }
 
         pub fn writeHelp(self: *CommandT, printer: *term.Printer) !void {
@@ -537,15 +550,14 @@ pub const Diagnostic = union(enum) {
         flag: []const u8,
         type: []const u8,
     },
-
+    custom: struct {
+        message: []const u8,
+    },
     pub fn format(self: *const Diagnostic, w: *std.Io.Writer) !void {
         switch (self.*) {
-            .unknown_flag => |data| {
-                try w.print("Unknown flag: {s}", .{data.arg});
-            },
-            else => |t| {
-                try w.print("type: {s}", .{@tagName(t)});
-            },
+            .unknown_flag => |data| try w.print("Unknown flag: {s}", .{data.arg}),
+            .custom => |data| try w.writeAll(data.message),
+            else => |t| try w.print("type: {s}", .{@tagName(t)}),
         }
     }
 };
