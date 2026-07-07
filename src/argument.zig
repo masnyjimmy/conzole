@@ -153,7 +153,7 @@ pub const Type = enum {
         };
     }
 };
-
+//TODO: add deinit method for allocated list frees
 pub const Payload = union(Type) {
     flag: types.Flag,
     int: types.Int,
