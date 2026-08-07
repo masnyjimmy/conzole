@@ -123,7 +123,24 @@ pub const TokenType = enum {
 
 //============== test ============
 
-fn testReadAs(input: []const u8, comptime T: type, expected: T) !void {
+fn testReadAsTokenType(input: []const u8, expected: TokenType, expected_payload: []const u8) !void {
+    var reader = Reader.init(&.{input});
+
+    const token = reader.read().?;
+
+    try std.testing.expectEqualStrings(input, token.lexeme);
+    try std.testing.expectEqualStrings(expected_payload, token.payload);
+    try std.testing.expectEqual(expected, token.type);
+}
+
+test "read each token type" {
+    try testReadAsTokenType("value", .value, "value");
+    try testReadAsTokenType("--long", .long, "long");
+    try testReadAsTokenType("-s", .short, "s");
+    try testReadAsTokenType("-25", .value, "-25");
+}
+
+fn testReadAsType(input: []const u8, comptime T: type, expected: T) !void {
     var reader = Reader.init(&.{input});
 
     const token = try reader.readAs(T);
@@ -134,7 +151,7 @@ fn testReadAs(input: []const u8, comptime T: type, expected: T) !void {
 }
 
 test "read each type" {
-    try testReadAs("51", arguments.types.Int, 51);
-    try testReadAs("25.5", arguments.types.Number, 25.5);
-    try testReadAs("hey", arguments.types.String, "hey");
+    try testReadAsType("51", arguments.types.Int, 51);
+    try testReadAsType("25.5", arguments.types.Number, 25.5);
+    try testReadAsType("hey", arguments.types.String, "hey");
 }
