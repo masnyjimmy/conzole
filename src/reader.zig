@@ -45,17 +45,17 @@ fn makeToken(input: []const u8) BasicToken {
 
     const token_type: TokenType = blk: {
         if (std.mem.cutPrefix(u8, input, "--")) |p| {
+            payload = p;
+            break :blk .long;
+        }
+
+        if (std.mem.cutPrefix(u8, input, "-")) |p| {
             // FIX: handle negative values in positional arguments properly
             if (std.ascii.isDigit(p[0])) {
                 payload = input;
                 break :blk .value;
             }
 
-            payload = p;
-            break :blk .long;
-        }
-
-        if (std.mem.cutPrefix(u8, input, "-")) |p| {
             payload = p;
             break :blk .short;
         }
